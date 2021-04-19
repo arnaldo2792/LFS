@@ -1,0 +1,91 @@
+#!/bin/bash
+
+export LC_ALL=C
+
+# Keeps track of the failed dependencies
+failed=
+
+# Required dependencies to build LFS
+dependencies=(
+  bash binutils bison yacc bzip2 coreutils
+  diff find gawk awk gcc ldd
+  grep gzip m4 make patch perl
+  python3 sed tar makeinfo xz
+)
+
+# Checks that the binary exists, and prints the version
+function check_dependency()
+{
+  [ -h /usr/bin/$1 ] || [ -x /usr/bin/$1 ] || return 1
+  echo "$1 version: $($1 --version | head -n 1)"
+}
+
+# Checks the binutils version using `ld`
+function check_binutils()
+{
+  [ -h /usr/bin/ld ] || [ -x /usr/bin/ld ] || return 1
+  echo "Binutils version: $(ld --version | head -n 1)"
+}
+
+# Checks the coreutils version using `chown`
+function check_coreutils()
+{
+  [ -h /usr/bin/chown ] || [ -x /usr/bin/chown ] || return 1
+  echo "Coreutils version: $(chown --version | head -n 1)"
+}
+
+# Checks the yacc version
+function check_yacc()
+{
+  [ -h /usr/bin/yacc ] || [ -x /usr/bin/yacc ] || return 1
+  echo "Yacc version: $(yacc -V | head -n 1)"
+}
+
+# Checks the perl version
+function check_perl()
+{
+  [ -h /usr/bin/perl ] || [ -x /usr/bin/perl ] || return 1
+  echo "Perl version: $(perl -V:version | head -n 1)"
+}
+
+# Checks the gcc/g++ versions, and compiles a dummy file
+function check_gcc()
+{
+  [ -h /usr/bin/gcc ] || [ -x /usr/bin/gcc ] || return 1
+  [ -h /usr/bin/g++ ] || [ -x /usr/bin/g++ ] || return 1
+ 
+  # Compile a dummy file
+  echo 'int main(){}' > dummy.c && g++ -o dummy dummy.c
+
+  # If dummy exists, the compilation succeeded
+  # Otherwise, compilation failed, and needs cleanup
+  ([ -x dummy ] && echo "Compilation: OK" && rm dummy.c dummy) \
+    || (echo "Compilation failed" && rm dummy.c && return 1)
+}
+
+# Checks bzip2 version
+function check_bzip2()
+{
+  [ -h /usr/bin/bzip2 ] || [ -x /usr/bin/bzip2 ] || return 1
+  echo "Bzip2 version: $(bzip2 --version 2>&1 < /dev/null | head -n1 | cut -d" " -f1,6-)"
+}
+
+# Iterate through all the dependencies
+for dependency in "${dependencies[@]}"; do
+  # Generate the function name to check the dependency
+  cmd="check_$dependency"
+
+  # Check if the function `check_$dependency` exists 
+  type $cmd 1>/dev/null 2>&1
+
+  if [ $? -eq 0 ]; then
+    # Call `check_$dependency`, since the dependency has special requirements
+    eval $cmd || failed="$dependency $failed"
+  else
+    # The dependency doesn't have special requirements
+    check_dependency $dependency || failed="$dependency $failed"
+  fi
+done
+
+# Exit with 1 if any dependency failed the check
+[ -z "$failed" ] || (echo "Missing dependencies: $failed" && exit 1)
